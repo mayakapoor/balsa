@@ -44,21 +44,22 @@ class Palm:
                 tokens.append(token)
         return tokens
 
+    def hash(self, data):
+        tokens = []
+        for i, row in data.iterrows():
+            raw_tokens = self.make_tokens_for_test(row)
+            encoded_tokens = []
+            for token in raw_tokens:
+                encoded_tokens.append(str(token).encode('utf-8'))
+            tokens.append(encoded_tokens)
+        return MinHash.bulk(tokens, num_perm=self.my_num_perms)
+
     def add_bucket(self, data, label):
         self.my_buckets[label] = Bucket(label, data)
 
-        minhash = []
+        minhashes = self.hash(data)
 
-        for i, row in data.iterrows():
-            m = MinHash(num_perm=self.my_num_perms)
-            #uncomment for TFIDF usage
-            #tokens = self.make_tokens(row, label)
-            tokens = self.make_tokens_for_test(row)
-            for token in tokens:
-                m.update(str(token).encode('utf-8'))
-            minhash.append(m)
-
-        for m in minhash:
+        for m in minhashes:
             # add the hash with its index to the forest
             self.my_forest.add(self.my_curr_index, m)
             # add the bucket to the lookup table
@@ -68,10 +69,29 @@ class Palm:
     def finalize(self):
         self.my_forest.index()
 
+    def query_batch(self, data, num_results):
+        minhashes = self.hash(data)
+        y_pred = []
+        for m in minhashes:
+            arr = np.array(self.my_forest.query(m, num_results))
+            counts = defaultdict()
+            for ret in arr:
+                bucket = self.my_lookup_table[ret]
+                if bucket in counts:
+                    counts[bucket] += 1
+                else:
+                    counts[bucket] = 1
+            if len(counts) == 0:
+                y_pred.append(self.my_lookup_table[random.randint(0, self.my_curr_index-1)])
+            else:
+                y_pred.append(max(counts, key=counts.get))
+        return y_pred
+
     def query(self, row, num_results):
         m = MinHash(num_perm=self.my_num_perms)
-        for token in self.make_tokens_for_test(row):
-            m.update(str(token).encode('utf-8'))
+        m.update_batch(str(token).encode('utf-8') for token in self.make_tokens_for_test(row))
+        #for token in self.make_tokens_for_test(row):
+        #    m.update(str(token).encode('utf-8'))
         arr = np.array(self.my_forest.query(m, num_results))
         counts = defaultdict()
         for ret in arr:
@@ -81,5 +101,5 @@ class Palm:
             else:
                 counts[bucket] = 1
         if len(counts) == 0:
-            return self.my_lookup_table[random.randint(0, self.my_curr_index)]
+            return self.my_lookup_table[random.randint(0, self.my_curr_index-1)]
         return max(counts, key=counts.get)

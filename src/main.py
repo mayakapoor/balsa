@@ -12,8 +12,8 @@ import statistics
 from imblearn.under_sampling import RandomUnderSampler
 
 def extract_hash_values(df):
-    #return df[["src_port","dst_port","t_proto","dsfield","ip_flags","length","payload"]]
-    return df[["t_proto","dsfield","ip_flags","length","payload"]]
+    return df[["src_port","dst_port","t_proto","dsfield","ip_flags","length","payload"]]
+    #return df[["t_proto","dsfield","ip_flags","length","payload"]]
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Process pcap file and integer data.")
@@ -36,7 +36,7 @@ if __name__ == "__main__":
             list_y.append(data_y)
     X = pd.concat(list_X, ignore_index=True)
     y = pd.concat(list_y, ignore_index=True)
-    y["d_proto"] = y["d_proto"].replace(["ftp", "ftpdata", "bittorrent", "dns", "http", "xmpp", "sip", "h225", "mgcp", "rtp", "dhcp", "ntp", "nbns", "ssh", "telnet", "gprs", "pptp", "ldap", "smb", "pop", "smtp", "imap", "gquic", "ssdp", "rtcp"], "non-tls")
+    #y["d_proto"] = y["d_proto"].replace(["ftp", "ftpdata", "bittorrent", "dns", "http", "xmpp", "sip", "h225", "mgcp", "rtp", "dhcp", "ntp", "nbns", "ssh", "telnet", "gprs", "pptp", "ldap", "smb", "pop", "smtp", "imap", "gquic", "ssdp", "rtcp"], "non-tls")
 
     print(len(X))
     print("Data count before sampling " , len(y))
@@ -55,24 +55,23 @@ if __name__ == "__main__":
     print("training time in seconds: " + str(time.time() - start))
     forest.finalize()
     num_votes = 10
-    y_pred = []
-    length_per_sec = 0
+
+    total = 0
+    MBs = 0
+    for i, row in X_test.iterrows():
+        total = total + int(row["length"])
+        if total > 1000000:
+            MBs += total/1000000
+            total = 0
+
     print("testing phase...")
-    throughput = []
     classification_time = []
     start = time.time()
-    throughput_start = time.time()
-    for i, row in X_test.iterrows():
-        y_pred.append(forest.query(row, num_votes))
-        length_per_sec += int(row["length"])
-        if (time.time() - throughput_start) > 1:
-            throughput.append(length_per_sec)
-            throughput_start = time.time()
-            length_per_sec = 0
+    y_pred = forest.query_batch(X_test, num_votes)
     end = time.time()
     print("ms per classification: " + str((((end-start)/len(y_test))*1000)))
-    print("throughput: " + str(statistics.mean(throughput)))
     print("number of test samples: " + str(len(y_test)))
+    print("Mb/s: " + str((MBs*8)/(end-start)))
     print("accuracy: " + str(accuracy_score(y_pred, y_test)))
     print("cohen kappa score: " + str(cohen_kappa_score(y_test, y_pred)))
     print("classification report: \n"+ classification_report(y_test, y_pred))
@@ -80,6 +79,6 @@ if __name__ == "__main__":
     print(len(y_test["d_proto"].tolist()))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
     fig, ax = plt.subplots(figsize=(15, 15))
-    disp.plot(ax=ax)
+    disp.plot(ax=ax, cmap="YlOrRd")
     plt.show()
     plt.savefig('../../images/confusion_matrix_vpn_{}.png'.format("d_proto"))
